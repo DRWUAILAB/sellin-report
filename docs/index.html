@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Sell-in 報表</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- 登入 -->
+<section id="login" class="login">
+  <form id="loginForm" class="login-card" autocomplete="off">
+    <div class="brand-mark">SI</div>
+    <h1>Sell-in 報表</h1>
+    <p class="muted">資料已加密，請輸入密碼開啟。</p>
+    <input id="pw" type="password" placeholder="密碼" autofocus required>
+    <label class="remember"><input id="remember" type="checkbox" checked> 這個分頁記住密碼</label>
+    <button type="submit" id="loginBtn">開啟報表</button>
+    <p id="loginMsg" class="err" role="alert"></p>
+  </form>
+</section>
+
+<!-- 報表 -->
+<div id="app" hidden>
+  <header class="topbar">
+    <div class="title">
+      <div class="brand-mark sm">SI</div>
+      <div>
+        <h1>Sell-in 報表</h1>
+        <p class="muted small" id="meta"></p>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="ser" class="active">① 系列別</button>
+      <button role="tab" data-tab="dos">② 劑型分類</button>
+      <button role="tab" data-tab="code">③ 產品代碼</button>
+      <button role="tab" data-tab="ch">④ 通路別</button>
+      <button role="tab" data-tab="mon">⑤ 系列別 by 月</button>
+      <button role="tab" data-tab="chk">資料檢核</button>
+    </nav>
+    <div class="top-actions">
+      <label class="switch" title="贈品、備品（售價 0）。405 預設排除"><input type="checkbox" id="incGift"><span>含贈備品</span></label>
+      <label class="switch" title="領用客戶（客戶名稱含「領用」，NetSuite 才有）。405 預設排除"><input type="checkbox" id="incLoan"><span>含領用</span></label>
+      <button class="ghost" id="xlsx" title="把目前頁籤（含篩選條件）下載成有格式的 Excel；樹狀報表可用 Excel 左上的 1/2/3 收合">⬇ 下載 Excel</button>
+      <button class="ghost" id="xlsxAll" title="①～⑤ 報表（依各頁目前的篩選條件）＋資料檢核，放在同一個 Excel">⬇ 全部報表</button>
+      <button class="ghost" id="logout">鎖定</button>
+    </div>
+  </header>
+
+  <!-- ①～④：同一套樹狀表（仿 NetSuite 405 版面） -->
+  <main id="tree" class="panel">
+    <div class="filters" id="treeFilters"></div>
+    <div class="kpis" id="treeKpis"></div>
+    <section class="card">
+      <div class="card-head">
+        <h2 id="treeTitle"></h2>
+        <div class="btns" id="treeBtns"></div>
+      </div>
+      <div class="tbl-wrap tall"><table class="tbl" id="treeTable"></table></div>
+    </section>
+    <p class="note" id="treeNote"></p>
+  </main>
+
+  <!-- ⑤ 系列別 by 月 -->
+  <main id="mon" class="panel" hidden>
+    <div class="filters" id="monFilters"></div>
+    <section class="card">
+      <div class="card-head">
+        <h2 id="monTitle"></h2>
+        <div class="btns"><button class="ghost sm" data-collapse="mon">只看系列</button><button class="ghost sm" data-expand="mon">全部展開</button></div>
+      </div>
+      <div class="tbl-wrap tall"><table class="tbl" id="monTable"></table></div>
+    </section>
+    <p class="note">各系列依合計由大到小排序；沒有資料的月份留空。</p>
+  </main>
+
+  <!-- 檢核 -->
+  <main id="chk" class="panel" hidden>
+    <div class="kpis" id="chkKpis"></div>
+    <section class="card"><div class="card-head"><h2>NetSuite 月份對 NetSuite 報表 405</h2></div>
+      <div class="tbl-wrap"><table class="tbl" id="chk405"></table></div>
+      <p class="note">405 本期（預設勾選，扣掉〔非品項收入〕〔總帳成本差額〕），2026-10-14 核對值。本報表不含非品項收入（促銷費、折讓、權利金…）與總帳成本差額，所以和 405 的「總計」列不同，要比商品行合計。
+        <b>銷退不一致</b>：NetSuite 的 API User Role 缺「交易 → 貸方通知單（檢視）」權限時，SuiteQL 不會報錯、只會少掉銷退；請 NetSuite 管理員補權限後重跑 build/ns_export.py。</p></section>
+    <section class="card"><div class="card-head"><h2>各月合計（依來源）</h2></div>
+      <div class="tbl-wrap"><table class="tbl" id="chkMonths"></table></div>
+      <p class="note">2026/06 以前＝Power BI（舊 ERP），2026/07 起＝NetSuite。拆組前後淨額應相同；差額＝拆組時找不到分攤成分的組包，或 Power BI 兩張表口徑不同。</p></section>
+    <div class="grid-2">
+      <section class="card"><div class="card-head"><h2>通路對照</h2></div>
+        <div class="tbl-wrap"><table class="tbl" id="chkCh"></table></div>
+        <p class="note">build/通路對照.csv 把 Power BI 與 NetSuite 的通路對成同一套名稱（通路類別、通路名稱），歷史與新資料才能放在一起比。黃底＝不在對照表、照原名稱顯示，請確認要不要合併到既有通路。</p></section>
+      <section class="card"><div class="card-head"><h2>品項缺分類</h2></div>
+        <div class="tbl-wrap"><table class="tbl" id="chkItems"></table></div>
+        <p class="note">品項主檔：NetSuite 有的用 NetSuite（現行系列、劑型），舊品號用 Power BI。系列名稱經 build/系列對照.csv 統一，沒列的自動去掉結尾「系列」。</p></section>
+    </div>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha512-r22gChDnGvBylk90+2e/ycr3RVrDi8DIOkIGNhJlKfuyQM4tIRAI062MaV8sfjQKYVGjOBaZBOA87z+IhZE9DA==" crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
+<script src="xlsx.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

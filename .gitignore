@@ -1,0 +1,13 @@
+# 密碼與未加密資料不進版控
+build/password.txt
+data/
+*.xlsx
+*.csv
+!build/通路對照.csv
+!build/系列對照.csv
+!build/劑型對照.csv
+*.json
+__pycache__/
+.DS_Store
+# 內部文件（NetSuite 帳號、角色、網址），repo 是公開的
+SellIn報表_規格書.md
