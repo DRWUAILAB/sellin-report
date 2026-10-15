@@ -33,7 +33,7 @@ CUTOVER = "202607"     # NetSuite 上線月：此月起用 NetSuite，之前用 
 GIFT, LOAN = 1, 2      # 事實表 flag 位元：贈備品、領用
 
 # 405 第十二版本期（預設：排除贈備品、領用；扣掉〔非品項收入〕〔總帳成本差額〕），2026-10-14 核對值。
-# 前五欄與 sellin_export.py 的 EXPECT_405 相同（改的話兩邊一起改）；xnq＝拆組後淨量（規格書第 7 節）
+# 前五欄與 sellin_export.py 的 EXPECT_405 相同（改的話兩邊一起改，規格書 12.1）；xnq＝拆組後淨量；數值見規格書 12.2
 EXPECT_405 = {
     "202607": {"amt": 110117707, "cogs": 21366112, "sq": 221879, "rq": -16199, "nq": 205680, "xnq": 264645},
     "202608": {"amt": 177299615, "cogs": 32269699, "sq": 288561, "rq": -9055, "nq": 279506, "xnq": 333683},
@@ -220,8 +220,12 @@ def main():
     for r in combo:
         if not r[3]:
             xnq[ym_list[r[0]]] += r[6]
+    missing = []   # 有基準、卻沒有 NetSuite 資料的月份（取數失敗或年月鍵打錯）：視為錯誤，不發布
     for y, e in EXPECT_405.items():
         if y not in tot:
+            print(f"  {y} ✘ 沒有 NetSuite 資料（ns_export.py 沒抓到這個月？或 EXPECT_405 的年月鍵打錯）")
+            missing.append(y)
+            warn.append(y)
             continue
         t = tot[y]
         got = {"amt": t[3], "cogs": t[4], "sq": t[0], "rq": t[1], "nq": t[2], "xnq": xnq[y]}
@@ -241,6 +245,9 @@ def main():
     if unused:
         print("[注意] 通路對照有、資料裡沒有的列（打錯？）：" + "、".join("/".join(map(str, k)) for k in unused))
     print(f"品項 {len(out_items):,}；未拆組 {len(single):,} 列；拆組 {len(combo):,} 列")
+    if missing:
+        sys.exit(f"[錯誤] 有 405 基準的月份沒有 NetSuite 資料：{'、'.join(missing)}。"
+                 "請重跑 build/ns_export.py，或檢查 EXPECT_405 的年月鍵；沒有輸出 data.enc。")
     if args.check:
         return
 
@@ -249,7 +256,7 @@ def main():
         "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "cutover": CUTOVER,
         "source": {"pbi": "Power BI「Sellin 通路及系列別分析 (未拆組&拆組)」", "ns": "NetSuite SuiteQL（口徑同報表 405）",
-                   "nsMissingReturns": warn},
+                   "ns405Mismatch": warn},   # 和 405 基準不一致的月份（原因可能是權限、月結還在動或口徑）
         "yms": ym_list,
         "itemCols": ["品號", "品名", "產品代碼", "前三碼", "前六碼", "系列", "劑型", "存貨型態", "品牌", "主檔來源"],
         "items": out_items,

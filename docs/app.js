@@ -67,7 +67,8 @@
       return r;
     };
     d.rng = { single: ranges(d.single), combo: ranges(d.combo) };
-    d.missRet = new Set(d.source.nsMissingReturns || []);
+    // 和 405 基準不一致的月份（舊版 data.enc 的欄位名稱是 nsMissingReturns）
+    d.mismatch405 = new Set(d.source.ns405Mismatch || d.source.nsMissingReturns || []);
     return d;
   }
 
@@ -279,7 +280,7 @@
       kpi(`本期成本率（${cl}）`, t.c && fmtR(t.c.cr), t.dCr != null ? `${sign(t.dCr, pp)} <span class="muted">vs 前期</span>` : "") +
       kpi(`本年累計銷貨淨額`, t.t && fmtN(t.t.a), `<span class="muted">${yl}</span>`) +
       kpi(`本年累計成本率`, t.t && fmtR(t.t.cr), `<span class="muted">${basis}・${S.gift ? "含" : "不含"}贈備品・${S.loan ? "含" : "不含"}領用</span>`);
-    const miss = [pre, cur].map(i => D.yms[i]).filter(y => D.missRet.has(y));
+    const miss = [pre, cur].map(i => D.yms[i]).filter(y => D.mismatch405.has(y));
     $("#treeNote").innerHTML =
       (miss.length ? `<b class="down">⚠ ${miss.map(ymLabel).join("、")} 的 NetSuite 資料和 405 對不上（API 權限或月結還在動），請看資料檢核。</b><br>` : "") +
       `資料來源：前期 ${src(pre)}、本期 ${src(cur)}（2026/06 以前＝Power BI 舊 ERP，2026/07 起＝NetSuite，口徑同報表 405）。` +
@@ -382,7 +383,7 @@
       const a = s.get(i) || [0, 0, 0, 0, 0], b = c.get(i) || [0, 0, 0, 0, 0], d = b[3] - a[3];
       const hi = Math.abs(d) > Math.max(1000, Math.abs(a[3]) * 0.001);
       if (hi) badSplit++;
-      const miss = D.missRet.has(D.yms[i]);
+      const miss = D.mismatch405.has(D.yms[i]);
       mh += `<tr><td class="l">${ymLabel(D.yms[i])}</td><td>${i >= D.cutIx ? "NetSuite" : "Power BI"}</td><td class="sep">${fmtN(a[3])}</td><td>${fmtN(b[3])}</td>` +
         `<td class="${hi ? "hi" : ""}">${fmtN(d)}</td><td class="sep">${fmtN(a[0])}</td><td class="${miss ? "hi" : ""}"${miss ? ' title="這個月和 405 對不上，請看上方 405 對帳"' : ""}>${fmtN(a[1])}</td>` +
         `<td>${fmtN(a[2])}</td><td class="sep">${fmtN(a[4])}</td><td>${fmtR(div(a[4], a[3]))}</td></tr>`;
