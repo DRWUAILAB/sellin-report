@@ -75,7 +75,7 @@
   const S = {
     tab: "ser", gift: false, loan: false,
     basis: { ser: "未拆組", dos: "未拆組", code: "未拆組", ch: "未拆組", mon: "未拆組" },   // 預設同 405 匯出（未拆組，組包歸「組合」）
-    t: null,     // ①～④ 共用篩選：{ pre, cur, brand, cat:Set, ch:Set }
+    t: null,     // ①～④ 共用篩選：{ c0, c1 本期起迄, p0, p1 前期起迄, mode 前期取法, brand, cat:Set, ch:Set }（月份索引）
     m: null,     // ⑤：{ year, measure, dim }
     open: { ser: new Set(), dos: new Set(), code: new Set(), ch: new Set(), mon: new Set() },
   };
@@ -127,6 +127,17 @@
     $("select", el).addEventListener("change", e => onChange(e.target.value));
     return el;
   }
+  function rangeBox(label, options, a, b, onChange) {
+    const el = document.createElement("label");
+    el.className = "f";
+    const sel = v => `<select>${options.map(([o, t]) => `<option value="${esc(o)}" ${o === v ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
+    el.innerHTML = `<span>${esc(label)}</span><div class="rng">${sel(a)}<i>～</i>${sel(b)}</div>`;
+    const [s0, s1] = el.querySelectorAll("select");
+    const fire = () => { const x = +s0.value, y = +s1.value; onChange(Math.min(x, y), Math.max(x, y)); };
+    s0.addEventListener("change", fire);
+    s1.addEventListener("change", fire);
+    return el;
+  }
   function seg(label, options, value, onChange) {
     const el = document.createElement("div");
     el.className = "f";
@@ -172,8 +183,19 @@
     // 本期預設＝最後一個完整月份（最新月份還在月中時用前一個月）
     const today = new Date(), thisYm = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}`;
     const cur = D.yms[n - 1] === thisYm && n > 1 ? n - 2 : n - 1;
-    S.t = { pre: Math.max(0, cur - 1), cur, brand: "全部", cat: new Set(D.allCats), ch: new Set(D.allChNames) };
+    S.t = { c0: cur, c1: cur, mode: "上一期", brand: "全部", cat: new Set(D.allCats), ch: new Set(D.allChNames) };
+    setPre();
     buildTreeFilters();
+  }
+  // 前期取法：上一期＝緊接在本期前、同樣長度的月份；去年同期＝本期往前 12 個月；自訂＝自己選
+  function setPre() {
+    const t = S.t, len = t.c1 - t.c0;
+    if (t.mode === "上一期") {
+      t.p1 = Math.max(0, t.c0 - 1); t.p0 = Math.max(0, t.p1 - len);
+    } else if (t.mode === "去年同期") {
+      const back = ym => { const i = D.yms.indexOf(String(+ym.slice(0, 4) - 1) + ym.slice(4)); return i < 0 ? 0 : i; };
+      t.p0 = back(D.yms[t.c0]); t.p1 = Math.max(t.p0, back(D.yms[t.c1]));
+    }
   }
   function buildTreeFilters() {
     const f = $("#treeFilters");
@@ -181,8 +203,9 @@
     const opts = D.yms.map((y, i) => [i, ymLabel(y) + (i >= D.cutIx ? "" : "（PBI）")]);
     f.append(
       seg("口徑", ["拆組", "未拆組"], S.basis[S.tab], v => { S.basis[S.tab] = v; renderTree(); }),
-      selectBox("前期", opts, S.t.pre, v => { S.t.pre = +v; renderTree(); }),
-      selectBox("本期", opts, S.t.cur, v => { S.t.cur = +v; renderTree(); }),
+      rangeBox("本期（起～迄）", opts, S.t.c0, S.t.c1, (a, b) => { S.t.c0 = a; S.t.c1 = b; setPre(); buildTreeFilters(); renderTree(); }),
+      seg("前期", ["上一期", "去年同期", "自訂"], S.t.mode, v => { S.t.mode = v; setPre(); buildTreeFilters(); renderTree(); }),
+      rangeBox("前期（起～迄）", opts, S.t.p0, S.t.p1, (a, b) => { S.t.p0 = a; S.t.p1 = b; S.t.mode = "自訂"; buildTreeFilters(); renderTree(); }),
       seg("品牌", ["全部", "DR.WU", "Redermx"], S.t.brand, v => { S.t.brand = v; renderTree(); }),
       multiSelect("通路別", D.allCats, S.t.cat, renderTree),
       multiSelect("通路名稱", D.allChNames, S.t.ch, renderTree),
@@ -191,16 +214,16 @@
 
   function calcTree(tab) {
     const cfg = TREES[tab];
-    const { pre, cur, brand, cat, ch } = S.t;
+    const { p0, p1, c0, c1, brand, cat, ch } = S.t;
     const basis = S.basis[tab], kind = basis === "未拆組" ? "single" : "combo";
     const rows = D[kind], rng = D.rng[kind];
-    const y = D.yms[cur].slice(0, 4);
+    const y = D.yms[c1].slice(0, 4);
     const ytd0 = D.yms.findIndex(v => v.startsWith(y));
     const root = node(tab, "", "", NV), tot = node("t", "", "", NV);
-    const yms = new Set([pre]);
-    for (let i = ytd0; i <= cur; i++) yms.add(i);
+    const yms = new Set();
+    for (const [a, b] of [[p0, p1], [c0, c1], [ytd0, c1]]) for (let i = a; i <= b; i++) yms.add(i);
     for (const ym of yms) {
-      const hits = [ym === pre, ym === cur, ym >= ytd0 && ym <= cur];
+      const hits = [ym >= p0 && ym <= p1, ym >= c0 && ym <= c1, ym >= ytd0 && ym <= c1];
       const [s, e] = rng[ym];
       for (let i = s; i < e; i++) {
         const r = rows[i];
@@ -237,14 +260,15 @@
       };
     };
     const sortKids = arr => arr.sort((a, b) => (b.v[8] - a.v[8]) || (b.v[3] - a.v[3]) || (b.v[13] - a.v[13]));
-    const pl = ymLabel(D.yms[pre]), cl = ymLabel(D.yms[cur]), yl = `${ymLabel(D.yms[ytd0])}～${ymLabel(D.yms[cur])}`;
+    const span = (a, b) => (a === b ? ymLabel(D.yms[a]) : `${ymLabel(D.yms[a])}～${ymLabel(D.yms[b])}`);
+    const pl = span(p0, p1), cl = span(c0, c1), yl = span(ytd0, c1);
     const depth = (cfg.levels ? cfg.levels(D.items[0]).length : 2);
-    return { tab, cfg, basis, root, tot, calc, sortKids, pl, cl, yl, depth, pre, cur, ytd0 };
+    return { tab, cfg, basis, root, tot, calc, sortKids, pl, cl, yl, depth, p0, p1, c0, c1 };
   }
 
   function renderTree() {
     const T = calcTree(S.tab);
-    const { cfg, root, tot, calc, sortKids, pl, cl, yl, depth, basis, pre, cur, ytd0 } = T;
+    const { cfg, root, tot, calc, sortKids, pl, cl, yl, depth, basis, p0, p1, c0, c1 } = T;
     $("#treeTitle").textContent = cfg.title;
     const sign = (v, f) => (v == null ? "" : `<span class="${v > 0 ? "up" : v < 0 ? "down" : ""}">${v > 0 ? "+" : ""}${f(v)}</span>`);
     const pp = v => (v * 100).toFixed(1) + " pp";
@@ -274,17 +298,18 @@
 
     const t = calc(tot);
     const kpi = (k, v, d) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v || "—"}</div><div class="d">${d}</div></div>`;
-    const src = i => (i >= D.cutIx ? "NetSuite" : "Power BI");
+    const src = (a, b) => (a >= D.cutIx ? "NetSuite" : b < D.cutIx ? "Power BI" : "Power BI＋NetSuite");
     $("#treeKpis").innerHTML =
       kpi(`本期銷貨淨額（${cl}）`, t.c && fmtN(t.c.a), t.growth != null ? `${sign(t.growth, fmtR)} <span class="muted">vs 前期 ${pl}</span>` : `<span class="muted">前期無資料</span>`) +
       kpi(`本期成本率（${cl}）`, t.c && fmtR(t.c.cr), t.dCr != null ? `${sign(t.dCr, pp)} <span class="muted">vs 前期</span>` : "") +
       kpi(`本年累計銷貨淨額`, t.t && fmtN(t.t.a), `<span class="muted">${yl}</span>`) +
       kpi(`本年累計成本率`, t.t && fmtR(t.t.cr), `<span class="muted">${basis}・${S.gift ? "含" : "不含"}贈備品・${S.loan ? "含" : "不含"}領用</span>`);
-    const miss = [pre, cur].map(i => D.yms[i]).filter(y => D.mismatch405.has(y));
+    const miss = D.yms.filter((y, i) => ((i >= p0 && i <= p1) || (i >= c0 && i <= c1)) && D.mismatch405.has(y));
     $("#treeNote").innerHTML =
       (miss.length ? `<b class="down">⚠ ${miss.map(ymLabel).join("、")} 的 NetSuite 資料和 405 對不上（API 權限或月結還在動），請看資料檢核。</b><br>` : "") +
-      `資料來源：前期 ${src(pre)}、本期 ${src(cur)}（2026/06 以前＝Power BI 舊 ERP，2026/07 起＝NetSuite，口徑同報表 405）。` +
-      `占比＝占所選範圍該期總淨額；成本率＝銷貨成本 ÷ 銷貨淨額；本年累計＝本期所在年度 1 月至本期；Sell-in 差異、成長率、成本率增減為本期 vs 前期。各層依本期淨額由大到小排序。` +
+      (p1 - p0 !== c1 - c0 ? `<b>注意：前期 ${p1 - p0 + 1} 個月、本期 ${c1 - c0 + 1} 個月，長度不同，成長率請斟酌。</b><br>` : "") +
+      `資料來源：前期 ${src(p0, p1)}、本期 ${src(c0, c1)}（2026/06 以前＝Power BI 舊 ERP，2026/07 起＝NetSuite，口徑同報表 405）。` +
+      `占比＝占所選範圍該期總淨額；成本率＝銷貨成本 ÷ 銷貨淨額；本期、前期可選多個月份（起～迄）；本年累計＝本期迄月所在年度 1 月至迄月；Sell-in 差異、成長率、成本率增減為本期 vs 前期。各層依本期淨額由大到小排序。` +
       (basis === "拆組" ? "拆組：組包依 BOM 拆成成分，金額、成本依建議售價 × 用量分攤。" : "");
     treeLast = T;
   }
@@ -459,13 +484,13 @@
     const pctCols = new Set([4, 6, 11, 13, 19, 21].map(c => c + lead));
     const s = lead + 1;
     return {
-      file: `SellIn_${TAB_NAMES[tab].slice(1)}_${cl.replace("/", "")}_${basis}_${stamp()}.xlsx`,
+      file: `SellIn_${TAB_NAMES[tab].slice(1)}_${cl.replaceAll("/", "").replace("～", "-")}_${basis}_${stamp()}.xlsx`,
       sheets: [{ name: TAB_NAMES[tab], aoa, head: 2, total: true, freeze: 2, freezeCols: nl,
         levels: [null, null, ...flat.map(f => f.lv), null],
         merges: [[1, s, 1, s + 6], [1, s + 7, 1, s + 13], [1, s + 14, 1, s + 19], [1, s + 20, 1, s + 22]],
         fmt: (r, c) => (r < 2 ? null : pctCols.has(c) ? PCT : c === lead + 22 ? "+0.0%;-0.0%" : NUM),
         cols: [...new Array(nl).fill(14), 36, ...new Array(23).fill(11)] }],
-      cond: [["口徑", basis], ["前期", pl], ["本期", cl], ["本年累計", yl], ["品牌", S.t.brand],
+      cond: [["口徑", basis], ["前期", pl + (S.t.mode === "自訂" ? "" : `（${S.t.mode}）`)], ["本期", cl], ["本年累計", yl], ["品牌", S.t.brand],
         ["通路別", setLbl(S.t.cat, D.allCats)], ["通路名稱", setLbl(S.t.ch, D.allChNames)]],
     };
   }
@@ -521,7 +546,7 @@
       cond.push(["共通", ""], ...condRows([]).map(([k, v]) => ["　" + k, v]));
       const sheets = [{ name: "篩選條件", cols: [16, 100], head: 1, aoa: cond, boldRows: new Set(cond.map((r, i) => (r[1] === "" && i ? i : -1))) },
         ...parts.flatMap(([, b]) => b.sheets)];
-      await XL.downloadXlsx(`SellIn_全部報表_${D.yms[S.t.cur]}_${stamp()}.xlsx`, sheets);
+      await XL.downloadXlsx(`SellIn_全部報表_${S.t.c0 === S.t.c1 ? D.yms[S.t.c1] : D.yms[S.t.c0] + "-" + D.yms[S.t.c1]}_${stamp()}.xlsx`, sheets);
     });
   }
 
