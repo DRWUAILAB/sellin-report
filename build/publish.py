@@ -18,7 +18,7 @@ from pathlib import Path
 
 WEB = Path(__file__).resolve().parent.parent
 DATA = "docs/data.enc"
-CONFIG_CSV = ["build/通路對照.csv", "build/系列對照.csv", "build/劑型對照.csv"]
+CONFIG_CSV = ["build/通路對照.csv", "build/系列對照.csv", "build/劑型對照.csv", "build/pbi.enc"]   # pbi.enc：pbi_pack.py pack 後一起發布
 
 
 def git(*args, quiet=False):
@@ -82,7 +82,7 @@ def main():
     step("[3/5] 重建加密資料 docs/data.enc")
     if subprocess.run([sys.executable, str(WEB / "build" / "build_data.py")], cwd=WEB).returncode:
         fail("建置失敗，請看上方訊息，沒有發布。")
-    step("[4/5] 建立 commit（docs/data.enc、build/ 對照表）")
+    step("[4/5] 建立 commit（docs/data.enc、build/ 對照表與 pbi.enc）")
     paths = []
     if before is not None and before == content_digest(WEB / DATA):
         git("checkout", "--", DATA)

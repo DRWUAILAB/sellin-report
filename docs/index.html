@@ -33,6 +33,7 @@
       <div>
         <h1>Sell-in 報表</h1>
         <p class="muted small" id="meta"></p>
+        <p class="small refresh-msg" id="refreshMsg" role="status" hidden></p>
       </div>
     </div>
     <nav class="tabs" role="tablist">
@@ -46,6 +47,7 @@
     <div class="top-actions">
       <label class="switch" title="贈品、備品（售價 0）。405 預設排除"><input type="checkbox" id="incGift"><span>含贈備品</span></label>
       <label class="switch" title="領用客戶（客戶名稱含「領用」，NetSuite 才有）。405 預設排除"><input type="checkbox" id="incLoan"><span>含領用</span></label>
+      <button class="ghost" id="refresh" title="抓 NetSuite 最新資料、重建並發布（在 GitHub Actions 雲端執行，約 3～5 分鐘）；第一次要貼 GitHub token">⟳ 更新 NetSuite</button>
       <button class="ghost" id="xlsx" title="把目前頁籤（含篩選條件）下載成有格式的 Excel；樹狀報表可用 Excel 左上的 1/2/3 收合">⬇ 下載 Excel</button>
       <button class="ghost" id="xlsxAll" title="①～⑤ 報表（依各頁目前的篩選條件）＋資料檢核，放在同一個 Excel">⬇ 全部報表</button>
       <button class="ghost" id="logout">鎖定</button>

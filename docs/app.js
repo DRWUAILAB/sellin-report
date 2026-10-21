@@ -572,6 +572,7 @@
     $("#incLoan").addEventListener("change", e => { S.loan = e.target.checked; renderAll(); });
     $("#xlsx").addEventListener("click", exportCurrent);
     $("#xlsxAll").addEventListener("click", exportAll);
+    $("#refresh").addEventListener("click", refresh);
     $("#logout").addEventListener("click", () => { store.del(PW_KEY); location.reload(); });
     document.addEventListener("click", e => {
       const td = e.target.closest("td.tg");
@@ -597,17 +598,126 @@
     });
   }
 
-  function load(raw) {
+  // ------------------------------------------------------------ 更新 NetSuite
+  // 按鈕 → GitHub Actions（.github/workflows/update-data.yml）→ GitHub 雲端主機跑 build/publish.py
+  // → push 新的 data.enc → GitHub Pages 發布後，這裡重新下載、解密、重畫（保留目前頁籤）。
+  // GitHub token（fine-grained，只給 sellin-report 的 Actions 讀寫）存在這台電腦的 localStorage。
+  const GH = { api: "https://api.github.com/repos/DRWUAILAB/sellin-report", wf: "update-data.yml", key: "sellin.ghToken" };
+  const local = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch { /* 略過 */ } },
+    del(k) { try { localStorage.removeItem(k); } catch { /* 略過 */ } },
+  };
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  let PW = null;
+  let refreshing = false;
+
+  async function gh(path, token, body) {
+    const res = await fetch(GH.api + path, {
+      method: body ? "POST" : "GET", cache: "no-store",
+      headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "X-GitHub-Api-Version": "2022-11-28" },
+      body: body && JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = new Error((await res.json().catch(() => ({}))).message || res.statusText);
+      err.status = res.status;
+      throw err;
+    }
+    return res.status === 204 ? null : res.json();
+  }
+  function say(html, cls = "") {
+    const el = $("#refreshMsg");
+    el.hidden = false;
+    el.className = "small refresh-msg " + cls;
+    el.innerHTML = html;
+  }
+  const mmss = ms => { const s = Math.round(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+
+  async function dispatch(token, since) {
+    // return_run_details：直接拿到 run id；舊 API 回 204 時，改從清單找這次按下後建立的 run
+    const r = await gh(`/actions/workflows/${GH.wf}/dispatches`, token, { ref: "main", return_run_details: true });
+    if (r?.workflow_run_id) return r.workflow_run_id;
+    for (let i = 0; i < 10; i++) {
+      await sleep(3000);
+      const { workflow_runs: runs } = await gh(`/actions/workflows/${GH.wf}/runs?event=workflow_dispatch&per_page=5`, token);
+      const run = runs.find(x => Date.parse(x.created_at) >= since - 60000);
+      if (run) return run.id;
+    }
+    throw new Error("已送出，但找不到這次的執行紀錄，請到 GitHub Actions 查看");
+  }
+
+  async function waitForData(sha) {
+    // GitHub Pages 約 1 分鐘發布；最多等 6 分鐘
+    for (let i = 0; i < 36; i++) {
+      await sleep(10000);
+      const enc = await (await fetch(`data.enc?v=${sha}`, { cache: "no-store" })).json().catch(() => null);
+      if (enc && enc.ct !== ENC.ct) return enc;
+    }
+    return null;
+  }
+
+  async function refresh() {
+    if (refreshing) return;
+    let token = local.get(GH.key);
+    if (!token) {
+      token = prompt("請貼上 GitHub token（fine-grained，Repository：sellin-report，權限 Actions：Read and write）。\n只存在這台電腦的瀏覽器，之後不用再輸入。")?.trim();
+      if (!token) return;
+    }
+    refreshing = true;
+    const btn = $("#refresh");
+    btn.disabled = true;
+    const since = Date.now();
+    try {
+      say("送出更新要求…");
+      const id = await dispatch(token, since);
+      local.set(GH.key, token);
+      const link = `<a href="https://github.com/DRWUAILAB/sellin-report/actions/runs/${id}" target="_blank" rel="noopener">看紀錄</a>`;
+      let run;
+      for (;;) {
+        run = await gh(`/actions/runs/${id}`, token);
+        if (run.status === "completed") break;
+        const t = mmss(Date.now() - since);
+        if (run.status === "in_progress") say(`抓 NetSuite、重建資料中…（${t}）${link}`);
+        else say(`排隊中…（${t}）${Date.now() - since > 120000 ? "GitHub Actions 忙碌中，請稍候。" : ""}${link}`);
+        await sleep(5000);
+      }
+      if (run.conclusion !== "success") throw Object.assign(new Error(`更新失敗（${run.conclusion}），沒有發布。${link}`), { html: true });
+
+      // publish.py 內容沒變化時不 commit：看這次有沒有新的 data.enc commit
+      const commits = await gh(`/commits?path=docs/data.enc&sha=main&per_page=1&since=${encodeURIComponent(run.created_at)}`, token);
+      if (!commits.length) { say(`NetSuite 資料沒有變化，報表已是最新。${link}`, "ok"); return; }
+      say(`已發布，等 GitHub Pages 更新網站…（約 1 分鐘）${link}`);
+      const enc = await waitForData(commits[0].sha);
+      if (!enc) throw Object.assign(new Error(`已發布，但網站還沒更新，請稍後重新整理頁面。${link}`), { html: true });
+      ENC = enc;
+      load(await decrypt(ENC, PW), S.tab);
+      say(`已更新到最新資料（${esc(D.generated)}）`, "ok");
+    } catch (err) {
+      console.error(err);
+      if (err.status === 401 || err.status === 403 || err.status === 404) {
+        local.del(GH.key);
+        say(`GitHub token 無效或權限不足（需要 sellin-report 的 Actions 讀寫），已清除，請再按一次重新輸入。`, "bad");
+      } else {
+        say(err.html ? err.message : "更新失敗：" + esc(err.message), "bad");
+      }
+    } finally {
+      refreshing = false;
+      btn.disabled = false;
+    }
+  }
+
+  function load(raw, tab = "ser") {
     D = prepare(raw);
     $("#meta").textContent = `資料期間 ${ymLabel(D.yms[0])}–${ymLabel(D.yms[D.yms.length - 1])}・更新 ${D.generated}・` +
       `Power BI（～${ymLabel(D.yms[D.cutIx - 1] || D.yms[0])}）＋ NetSuite（${ymLabel(D.cutover)}～）`;
     initTree(); initMon();
-    showTab("ser");
+    showTab(tab);
     renderMon(); renderChk();
   }
 
   async function start(password, remember) {
     const raw = await open(password);
+    PW = password;
     if (remember) store.set(PW_KEY, password);
     $("#login").hidden = true;
     $("#app").hidden = false;

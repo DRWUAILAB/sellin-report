@@ -5,7 +5,7 @@ Sell-in 網頁報表：從 NetSuite 匯出 2026-07 起的資料（SuiteQL 唯讀
 用法：
     python build/ns_export.py                         # 2026-07 ～ 本月
     python build/ns_export.py --from 2026-09 --to 2026-10
-NS 匯入程式資料夾：--nsdir，或環境變數 NS_PROGRAM_DIR；預設 Mac 上的 DRWU/DrWu/02_NS匯入程式/NS匯入程式
+NS 匯入程式資料夾：--nsdir，或環境變數 NS_PROGRAM_DIR；預設 Mac 桌面的 02_NS匯入程式/NS匯入程式（GitHub Actions：build/ns）
 輸出（data/ 不進版控）：
     data/ns_未拆組.csv、data/ns_拆組.csv：年月,通路別,客戶名稱,領用,品號,贈備品,銷貨數量,銷退數量,銷貨淨量,銷貨淨額,銷貨成本
     data/ns_品項.csv：品號,品名,產品代碼,前三碼,前六碼,系列別,劑型分類,存貨型態
@@ -20,7 +20,10 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE.parent / "data"
-DEFAULT_NS = Path.home() / "Desktop/DRWU/DrWu/02_NS匯入程式/NS匯入程式"
+# NS 匯入程式的位置（依序找第一個存在的）；GitHub Actions 用 build/ns 的唯讀精簡版（NS_PROGRAM_DIR=build/ns）
+DEFAULT_NS = next((p for p in (Path.home() / "Desktop/02_NS匯入程式/NS匯入程式",
+                               Path.home() / "Desktop/DRWU/DrWu/02_NS匯入程式/NS匯入程式") if p.exists()),
+                  Path.home() / "Desktop/02_NS匯入程式/NS匯入程式")
 FACT_HEAD = ["年月", "通路別", "客戶名稱", "領用", "品號", "贈備品", "銷貨數量", "銷退數量", "銷貨淨量", "銷貨淨額", "銷貨成本"]
 ITEM_HEAD = ["品號", "品名", "產品代碼", "前三碼", "前六碼", "系列別", "劑型分類", "存貨型態"]
 
@@ -39,7 +42,7 @@ def main():
     ap.add_argument("--to", dest="b", default=dt.date.today().strftime("%Y-%m"))
     ap.add_argument("--nsdir", default=os.environ.get("NS_PROGRAM_DIR") or str(DEFAULT_NS))
     args = ap.parse_args()
-    nsdir = Path(args.nsdir)
+    nsdir = Path(args.nsdir).resolve()
     if not (nsdir / "sellin_export.py").exists():
         sys.exit(f"[錯誤] 找不到 NS 匯入程式（{nsdir}），請用 --nsdir 指定")
 

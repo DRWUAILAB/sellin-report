@@ -1,0 +1,65 @@
+# 網頁上的「⟳ 更新 NetSuite」按鈕觸發這支（也可以在 GitHub → Actions 手動執行），在 GitHub 雲端主機上跑：
+# 還原 Power BI 歷史（build/pbi.enc）→ 抓 NetSuite（build/ns 唯讀精簡版）→ 重建 docs/data.enc → push → 重建 GitHub Pages。
+# 需要的 Secrets（Settings → Secrets and variables → Actions）：
+#   SELLIN_PASSWORD                                    報表密碼（同 build/password.txt）
+#   NS_ACCOUNT_ID、NS_CONSUMER_KEY、NS_CONSUMER_SECRET、NS_TOKEN_ID、NS_TOKEN_SECRET   NetSuite TBA（建議專用的唯讀角色）
+name: 更新報表資料
+
+on:
+  workflow_dispatch:
+
+# 同一時間只跑一個；後按的排隊，不取消正在跑的
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # push docs/data.enc
+  pages: write      # 要求重建 GitHub Pages
+
+jobs:
+  update:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TZ: Asia/Taipei
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安裝套件
+        run: pip install openpyxl PyYAML requests cryptography
+
+      - name: 還原 Power BI 歷史
+        env:
+          SELLIN_PASSWORD: ${{ secrets.SELLIN_PASSWORD }}
+        run: python build/pbi_pack.py unpack
+
+      - name: 抓 NetSuite、重建 data.enc、發布
+        env:
+          SELLIN_PASSWORD: ${{ secrets.SELLIN_PASSWORD }}
+          NS_PROGRAM_DIR: build/ns
+          NS_ACCOUNT_ID: ${{ secrets.NS_ACCOUNT_ID }}
+          NS_CONSUMER_KEY: ${{ secrets.NS_CONSUMER_KEY }}
+          NS_CONSUMER_SECRET: ${{ secrets.NS_CONSUMER_SECRET }}
+          NS_TOKEN_ID: ${{ secrets.NS_TOKEN_ID }}
+          NS_TOKEN_SECRET: ${{ secrets.NS_TOKEN_SECRET }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          before=$(git rev-parse HEAD)
+          python build/publish.py
+          echo "PUBLISHED=$([ "$(git rev-parse HEAD)" != "$before" ] && echo 1 || echo 0)" >> "$GITHUB_ENV"
+
+      # 用 GITHUB_TOKEN push 不一定會觸發 Pages，明確要求重建一次
+      - name: 重建 GitHub Pages
+        if: env.PUBLISHED == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST "repos/${{ github.repository }}/pages/builds" --silent

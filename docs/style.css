@@ -83,6 +83,10 @@ button:disabled { opacity: .6; cursor: wait; }
 .tabs button { background: transparent; color: var(--muted); border: 1px solid transparent; }
 .tabs button.active { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
 .top-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.refresh-msg { margin: 2px 0 0; color: var(--muted); }
+.refresh-msg.ok { color: var(--good); }
+.refresh-msg.bad { color: var(--bad); }
+.refresh-msg a { color: var(--accent); margin-left: 6px; }
 .switch { display: flex; gap: 6px; align-items: center; font-size: 13px; cursor: pointer; }
 
 .panel { padding: 16px 20px 40px; max-width: 1600px; margin: 0 auto; }

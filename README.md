@@ -18,7 +18,7 @@ Sell-in 報表的網頁版，做法同 [sellout-report](https://github.com/DRWUA
 | 期間 | 來源 | 取數 |
 | --- | --- | --- |
 | 2019/01～2026/06 | Power BI「Sellin 通路及系列別分析 (未拆組&拆組)」（工作區 drwu_data_platform，舊 ERP） | `build/pbi_export.py`（DAX 唯讀，`az login` 身分） |
-| 2026/07 起 | NetSuite SuiteQL（唯讀，口徑同 405 第十二版） | `build/ns_export.py`（呼叫 NS匯入程式 的 `sellin_export.py`） |
+| 2026/07 起 | NetSuite SuiteQL（唯讀，口徑同 405 第十二版） | `build/ns_export.py`（呼叫 NS匯入程式 的 `sellin_export.py`；雲端用 `build/ns/` 複本） |
 
 切換月 `CUTOVER = "202607"`（`build/build_data.py`）。Power BI 的贈品＋備品合成一列「贈備品」（數量、成本，金額 0）；領用只有 NetSuite 有。不含 405 的〔非品項收入〕〔總帳成本差額〕與總帳表，所以要跟 405 的商品行合計比。
 
@@ -32,6 +32,17 @@ Sell-in 報表的網頁版，做法同 [sellout-report](https://github.com/DRWUA
 ## 每月更新
 
 點 `更新報表資料.command`（Mac）或 `更新報表資料.bat`（Windows）：同步 GitHub → 抓 NetSuite 2026/07 至本月 → 重建 `docs/data.enc` → push，GitHub Pages 約 1 分鐘後更新；內容沒有變化時不發布。加 `--no-fetch` 只用 `data/` 現有的 CSV 重建。
+
+### 網頁上的「⟳ 更新 NetSuite」按鈕（GitHub Actions 雲端執行，不需要開 Mac）
+
+按鈕呼叫 GitHub Actions（`.github/workflows/update-data.yml`），在 GitHub 雲端主機跑：`build/pbi_pack.py unpack` 還原 Power BI 歷史 → `build/publish.py`（NetSuite 用 `build/ns/` 的唯讀精簡版）→ push → 重建 Pages。網頁會顯示排隊／執行中／完成，Pages 發布後自動重新載入資料（約 3～5 分鐘）；內容沒有變化時顯示「已是最新」。
+
+- `build/ns/`：NS匯入程式 `sellin_export.py` 的複本，加上只有簽章＋SuiteQL 的 `core/netsuite.py`、只讀環境變數的 `core/config.py`。**NS匯入程式改了 `sellin_export.py`（405 口徑）時，要複製一份過來。**
+- `build/pbi.enc`：Power BI 歷史 CSV 加密後的檔案（密碼同報表）。重跑 `pbi_export.py` 後執行 `python build/pbi_pack.py pack`，下次發布會一起 push。
+
+一次性設定：
+1. Secrets（repo → Settings → Secrets and variables → Actions）：`SELLIN_PASSWORD`（報表密碼）、`NS_ACCOUNT_ID`、`NS_CONSUMER_KEY`、`NS_CONSUMER_SECRET`、`NS_TOKEN_ID`、`NS_TOKEN_SECRET`。NetSuite 建議另建只有「SuiteQL＋報表需要的檢視權限」的唯讀角色與 token，不要用 NS匯入程式（可寫入）的那組。改密碼時 `SELLIN_PASSWORD` 也要改，並重新 `pbi_pack.py pack`。
+2. 要按按鈕的人：GitHub → Settings → Developer settings → Fine-grained tokens，Resource owner 選 DRWUAILAB、Repository 只選 sellin-report、權限 **Actions: Read and write**（組織可能要核准）。第一次按按鈕時貼上，只存在該瀏覽器；token 失效時會自動清除並要求重新輸入。
 
 Power BI 歷史不需要每月重抓；要補舊資料時：`az login --allow-no-subscriptions` → `python build/pbi_export.py`。
 
